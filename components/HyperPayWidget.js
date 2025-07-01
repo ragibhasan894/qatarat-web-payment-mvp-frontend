@@ -80,7 +80,7 @@ export default function HyperPayWidget({ amount, currency = 'SAR', customerEmail
           disabled={loading}
           style={{
             width: '100%',
-            padding: '15px',
+            padding: '8px',
             backgroundColor: '#007bff',
             color: 'white',
             border: 'none',

@@ -1,2 +1,2 @@
-import CheckoutPage from './checkout';
+import CheckoutPage from '../components/checkout';
 export default CheckoutPage;
