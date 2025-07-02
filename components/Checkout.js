@@ -21,7 +21,8 @@ export default function Checkout() {
   const [orderData] = useState({
     amount: '100.00',
     currency: 'SAR',
-    description: 'Product Purchase'
+    description: 'Product Purchase',
+    cart_id: 3
   });
 
   // Customer data for PayTabs and MyFatoorah
@@ -34,43 +35,60 @@ export default function Checkout() {
     country: 'SA'
   });
 
-  // Initialize HyperPay when selected
-  useEffect(() => {
-    if (selectedPaymentMethod === PAYMENT_METHODS.HYPERPAY && !checkoutId) {
-      initializeHyperPay();
-    }
-  }, [selectedPaymentMethod]);
 
   // Load HyperPay script when checkoutId is available
-  useEffect(() => {
-    if (!checkoutId || selectedPaymentMethod !== PAYMENT_METHODS.HYPERPAY) return;
+useEffect(() => {
+  if (!checkoutId || selectedPaymentMethod !== PAYMENT_METHODS.HYPERPAY) return;
 
-    const script = document.createElement('script');
-    script.src = `https://test.oppwa.com/v1/paymentWidgets.js?checkoutId=${checkoutId}`;
-    script.async = true;
-    document.body.appendChild(script);
+  const script = document.createElement('script');
+  script.src = `${checkoutId}`;
+  script.async = true;
+  document.body.appendChild(script);
 
-    return () => {
-      // Cleanup script
-      const existingScript = document.querySelector(`script[src*="paymentWidgets.js"]`);
-      if (existingScript) {
-        document.body.removeChild(existingScript);
-      }
-    };
-  }, [checkoutId, selectedPaymentMethod]);
+  return () => {
+    const existingScript = document.querySelector(`script[src*="paymentWidgets.js"]`);
+    if (existingScript) {
+      document.body.removeChild(existingScript);
+    }
+  };
+}, [checkoutId, selectedPaymentMethod]);
+
+  const handleHyperpayPayment = async () => {
+  setLoading(true);
+  setError(null);
+
+  try {
+    const response = await fetch('http://localhost:8089/api/v2/web-payments/initiate/hyperpay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cart_id: orderData.cart_id }),
+    });
+
+    const data = await response.json();
+    if (data.success && data.payment_url) {
+      setCheckoutId(data.payment_url); // triggers useEffect to load the script
+    } else {
+      setError('HyperPay error: ' + (data.message || 'Unexpected error'));
+    }
+  } catch (err) {
+    setError('HyperPay network error: ' + err.message);
+  } finally {
+    setLoading(false);
+  }
+};
+
+
 
   const initializeHyperPay = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:8089/api/v2/hyperpay/create-session', {
+      const response = await fetch('http://localhost:8089/api/v2/web-payments/initiate/hyperpay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: orderData.amount,
-          currency: orderData.currency,
-          customerEmail: customerData.email,
+          cart_id: orderData.cart_id,
         }),
       });
 
@@ -94,6 +112,7 @@ export default function Checkout() {
 
     try {
       const paymentData = {
+        cart_id: orderData.cart_id,
         amount: parseFloat(orderData.amount),
         description: orderData.description,
         return_url: `${window.location.origin}/payment/success`,
@@ -126,15 +145,11 @@ export default function Checkout() {
   setError(null);
 
   try {
-    const response = await fetch('http://localhost:8089/api/v2/myfatoorah/initiate', {
+    const response = await fetch('http://localhost:8089/api/v2/web-payments/initiate/myfatoorah', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        amount: parseFloat(orderData.amount),
-        currency: orderData.currency,
-        customer_name: customerData.name,
-        customer_email: customerData.email,
-        customer_phone: customerData.phone,
+        cart_id: orderData.cart_id
       }),
     });
 
@@ -142,11 +157,7 @@ export default function Checkout() {
     console.log('MyFatoorah Response:', data); // Debug log
 
     // Check if the response is successful
-    if (data.IsSuccess && data.Data && data.Data.InvoiceURL) {
-      // Redirect to MyFatoorah payment page
-      console.log('Redirecting to:', data.Data.InvoiceURL);
-      window.location.href = data.Data.InvoiceURL;
-    } else if (data.success && data.payment_url) {
+    if (data.success && data.payment_url) {
       // Alternative structure (if your backend transforms the response)
       console.log('Redirecting to:', data.payment_url);
       window.location.href = data.payment_url;
@@ -380,30 +391,45 @@ export default function Checkout() {
   const renderPaymentInterface = () => {
     switch (selectedPaymentMethod) {
       case PAYMENT_METHODS.HYPERPAY:
-        if (loading) {
-          return <div style={{ textAlign: 'center', padding: '20px' }}>Loading HyperPay...</div>;
-        }
-        
-        if (checkoutId) {
-          return (
-            <div style={{ marginTop: '20px' }}>
-              <h4 style={{ marginBottom: '15px', fontSize: '16px', fontWeight: 'bold' }}>
-                HyperPay Secure Payment
-              </h4>
-              <form
-                action="/payment/result"
-                className="paymentWidgets"
-                data-brands="VISA MASTER MADA"
-                style={{
-                  border: '1px solid #ddd',
-                  borderRadius: '8px',
-                  padding: '20px',
-                  backgroundColor: '#f8f9fa'
-                }}
-              ></form>
-            </div>
-          );
-        }
+  return (
+    <div style={{ marginTop: '20px' }}>
+      <button
+        onClick={handleHyperpayPayment}
+        disabled={loading}
+        style={{
+          width: '100%',
+          padding: '15px',
+          backgroundColor: loading ? '#ccc' : '#007bff',
+          color: 'white',
+          border: 'none',
+          borderRadius: '8px',
+          fontSize: '16px',
+          fontWeight: 'bold',
+          cursor: loading ? 'not-allowed' : 'pointer'
+        }}
+      >
+        {loading ? 'Processing...' : `Pay ${orderData.currency} ${orderData.amount} with HyperPay`}
+      </button>
+
+      {checkoutId && (
+        <div style={{ marginTop: '20px' }}>
+          <form
+            action="/payment/result"
+            className="paymentWidgets"
+            data-brands="VISA MASTER MADA"
+            style={{
+              border: '1px solid #ddd',
+              borderRadius: '8px',
+              padding: '20px',
+              backgroundColor: '#f8f9fa'
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+
+
         break;
 
       case PAYMENT_METHODS.PAYTABS:
